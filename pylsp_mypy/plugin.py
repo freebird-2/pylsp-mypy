@@ -165,6 +165,30 @@ def match_exclude_patterns(document_path: str, exclude_patterns: list) -> bool:
     return False
 
 
+def get_cmd(settings: Dict[str, Any], cmd: str) -> List[str]:
+    """
+    Get the command to run from settings, falling back to searching the PATH.
+    If the command is not found in the settings and is not available on the PATH, an
+    empty list is returned.
+    """
+    command_key = f"{cmd}_command"
+    command: List[str] = settings.get(command_key, [])
+
+    if not (command and os.getenv("PYLSP_MYPY_ALLOW_DANGEROUS_CODE_EXECUTION")):
+        # env var is required to allow command from settings
+        if shutil.which(cmd):  # Fallback to PATH
+            log.debug(
+                f"'{command_key}' not found in settings or not allowed, using '{cmd}' from PATH"
+            )
+            command = [cmd]
+        else:  # Fallback to API
+            command = []
+
+    log.debug(f"Using {cmd} command: {command}")
+
+    return command
+
+
 @hookimpl
 def pylsp_lint(
     config: Config, workspace: Workspace, document: Document, is_saved: bool
@@ -304,18 +328,21 @@ def get_diagnostics(
         args.extend(["--incremental", "--follow-imports", settings.get("follow-imports", "silent")])
         args = apply_overrides(args, overrides)
 
-        if shutil.which("mypy"):
-            # mypy exists on path
-            # -> use mypy on path
+        mypy_command: List[str] = get_cmd(settings, "mypy")
+
+        if mypy_command:
+            # mypy exists on PATH or was provided by settings
+            # -> use this mypy
             log.info("executing mypy args = %s on path", args)
             completed_process = subprocess.run(
-                ["mypy", *args], capture_output=True, **windows_flag, encoding="utf-8"
+                [*mypy_command, *args], capture_output=True, **windows_flag, encoding="utf-8"
             )
             report = completed_process.stdout
             errors = completed_process.stderr
             exit_status = completed_process.returncode
         else:
-            # mypy does not exist on path, but must exist in the env pylsp-mypy is installed in
+            # mypy does not exist on PATH and was not provided by settings,
+            # but must exist in the env pylsp-mypy is installed in
             # -> use mypy via api
             log.info("executing mypy args = %s via api", args)
             report, errors, exit_status = mypy_api.run(args)
@@ -326,11 +353,13 @@ def get_diagnostics(
         # If daemon is dead/absent, kill will no-op.
         # In either case, reset to fresh state
 
-        if shutil.which("dmypy"):
-            # dmypy exists on path
-            # -> use dmypy on path
+        dmypy_command: List[str] = get_cmd(settings, "dmypy")
+
+        if dmypy_command:
+            # dmypy exists on PATH or was provided by settings
+            # -> use this dmypy
             completed_process = subprocess.run(
-                ["dmypy", "--status-file", dmypy_status_file, "status"],
+                [*dmypy_command, "--status-file", dmypy_status_file, "status"],
                 capture_output=True,
                 **windows_flag,
                 encoding="utf-8",
@@ -350,7 +379,8 @@ def get_diagnostics(
                     encoding="utf-8",
                 )
         else:
-            # dmypy does not exist on path, but must exist in the env pylsp-mypy is installed in
+            # dmypy does not exist on PATH and was not provided by settings,
+            # but must exist in the env pylsp-mypy is installed in
             # -> use dmypy via api
             _, errors, exit_status = mypy_api.run_dmypy(
                 ["--status-file", dmypy_status_file, "status"]
@@ -365,18 +395,19 @@ def get_diagnostics(
 
         # run to use existing daemon or restart if required
         args = ["--status-file", dmypy_status_file, "run", "--"] + apply_overrides(args, overrides)
-        if shutil.which("dmypy"):
-            # dmypy exists on path
-            # -> use mypy on path
+        if dmypy_command:
+            # dmypy exists on PATH or was provided by settings
+            # -> use this dmypy
             log.info("dmypy run args = %s via path", args)
             completed_process = subprocess.run(
-                ["dmypy", *args], capture_output=True, **windows_flag, encoding="utf-8"
+                [*dmypy_command, *args], capture_output=True, **windows_flag, encoding="utf-8"
             )
             report = completed_process.stdout
             errors = completed_process.stderr
             exit_status = completed_process.returncode
         else:
-            # dmypy does not exist on path, but must exist in the env pylsp-mypy is installed in
+            # dmypy does not exist on PATH and was not provided by settings,
+            # but must exist in the env pylsp-mypy is installed in
             # -> use dmypy via api
             log.info("dmypy run args = %s via api", args)
             report, errors, exit_status = mypy_api.run_dmypy(args)

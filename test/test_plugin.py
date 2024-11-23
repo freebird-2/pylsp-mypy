@@ -383,3 +383,103 @@ def test_config_exclude(tmpdir, workspace):
     workspace.update_config({"pylsp": {"plugins": {"pylsp_mypy": {"exclude": [exclude_path]}}}})
     diags = plugin.pylsp_lint(workspace._config, workspace, doc, is_saved=False)
     assert diags == []
+
+
+@pytest.mark.parametrize(
+    ("command", "settings", "cmd_on_path", "environmentVariableSet", "expected"),
+    [
+        ("mypy", {}, ["/bin/mypy"], True, ["mypy"]),
+        ("mypy", {}, None, True, []),
+        ("mypy", {"mypy_command": ["/path/to/mypy"]}, "/bin/mypy", True, ["/path/to/mypy"]),
+        ("mypy", {"mypy_command": ["/path/to/mypy"]}, None, True, ["/path/to/mypy"]),
+        ("dmypy", {}, "/bin/dmypy", True, ["dmypy"]),
+        ("dmypy", {}, None, True, []),
+        ("dmypy", {"dmypy_command": ["/path/to/dmypy"]}, "/bin/dmypy", True, ["/path/to/dmypy"]),
+        ("dmypy", {"dmypy_command": ["/path/to/dmypy"]}, None, True, ["/path/to/dmypy"]),
+        ("mypy", {}, ["/bin/mypy"], False, ["mypy"]),
+        ("mypy", {}, None, False, []),
+        ("mypy", {"mypy_command": ["/path/to/mypy"]}, "/bin/mypy", False, ["mypy"]),
+        ("mypy", {"mypy_command": ["/path/to/mypy"]}, None, False, []),
+        ("dmypy", {}, "/bin/dmypy", False, ["dmypy"]),
+        ("dmypy", {}, None, False, []),
+        ("dmypy", {"dmypy_command": ["/path/to/dmypy"]}, "/bin/dmypy", False, ["dmypy"]),
+        ("dmypy", {"dmypy_command": ["/path/to/dmypy"]}, None, False, []),
+    ],
+)
+def test_get_cmd(command, settings, cmd_on_path, environmentVariableSet: bool, expected):
+    with patch("shutil.which", return_value=cmd_on_path):
+        if environmentVariableSet:
+            os.environ["PYLSP_MYPY_ALLOW_DANGEROUS_CODE_EXECUTION"] = "Does not matter at all"
+        else:
+            os.environ.pop("PYLSP_MYPY_ALLOW_DANGEROUS_CODE_EXECUTION", None)
+        assert plugin.get_cmd(settings, command) == expected
+
+
+def test_config_overrides_mypy_command(last_diagnostics_monkeypatch, workspace):
+    last_diagnostics_monkeypatch.setattr(
+        FakeConfig,
+        "plugin_settings",
+        lambda _, p: (
+            {
+                "mypy_command": ["/path/to/mypy"],
+            }
+            if p == "pylsp_mypy"
+            else {}
+        ),
+    )
+
+    m = Mock(wraps=lambda a, **_: Mock(returncode=0, **{"stdout": ""}))
+    last_diagnostics_monkeypatch.setattr(plugin.subprocess, "run", m)
+
+    document = Document(DOC_URI, workspace, DOC_TYPE_ERR)
+
+    config = FakeConfig(uris.to_fs_path(workspace.root_uri))
+    os.environ["PYLSP_MYPY_ALLOW_DANGEROUS_CODE_EXECUTION"] = "Does not matter at all"
+    plugin.pylsp_settings(config)
+
+    plugin.pylsp_lint(
+        config=config,
+        workspace=workspace,
+        document=document,
+        is_saved=False,
+    )
+
+    called_argv = m.call_args.args[0]
+    called_cmd = called_argv[0]
+    assert called_cmd == "/path/to/mypy"
+
+
+def test_config_overrides_dmypy_command(last_diagnostics_monkeypatch, workspace):
+    last_diagnostics_monkeypatch.setattr(
+        FakeConfig,
+        "plugin_settings",
+        lambda _, p: (
+            {
+                "dmypy": True,
+                "live_mode": False,
+                "dmypy_command": ["poetry", "run", "dmypy"],
+            }
+            if p == "pylsp_mypy"
+            else {}
+        ),
+    )
+
+    m = Mock(wraps=lambda a, **_: Mock(returncode=0, **{"stdout": ""}))
+    last_diagnostics_monkeypatch.setattr(plugin.subprocess, "run", m)
+
+    document = Document(DOC_URI, workspace, DOC_TYPE_ERR)
+
+    config = FakeConfig(uris.to_fs_path(workspace.root_uri))
+    os.environ["PYLSP_MYPY_ALLOW_DANGEROUS_CODE_EXECUTION"] = "Does not matter at all"
+    plugin.pylsp_settings(config)
+
+    plugin.pylsp_lint(
+        config=config,
+        workspace=workspace,
+        document=document,
+        is_saved=False,
+    )
+
+    called_argv = m.call_args.args[0]
+    called_cmd = called_argv[:3]
+    assert called_cmd == ["poetry", "run", "dmypy"]
