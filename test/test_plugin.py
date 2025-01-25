@@ -23,7 +23,7 @@ DOC_TYPE_ERR = """{}.append(3)
 # Mypy 1.7 changed <nothing> into "Never", so make this a regex to be compatible
 # with multiple versions of mypy
 TYPE_ERR_MSG_REGEX = (
-    r'"Dict\[(?:(?:<nothing>)|(?:Never)), (?:(?:<nothing>)|(?:Never))\]" has no attribute "append"'
+    r'"dict\[(?:(?:<nothing>)|(?:Never)), (?:(?:<nothing>)|(?:Never))\]" has no attribute "append"'
 )
 
 TEST_LINE = 'test_plugin.py:279:8:279:16: error: "Request" has no attribute "id"  [attr-defined]'
