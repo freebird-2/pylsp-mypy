@@ -11,7 +11,9 @@ This is a plugin for the `Python LSP Server`_.
 
 .. _`Python LSP Server`: https://github.com/python-lsp/python-lsp-server
 
-It, like mypy, requires Python 3.8 or newer.
+It, like `mypy`_, requires Python 3.9 or newer.
+
+.. _`mypy`: https://github.com/python/mypy
 
 
 Installation
