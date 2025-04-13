@@ -339,7 +339,7 @@ def get_diagnostics(
             # -> use this mypy
             log.info("executing mypy args = %s on path", args)
             completed_process = subprocess.run(
-                [*mypy_command, *args], capture_output=True, **windows_flag, encoding="utf-8"
+                [*mypy_command, *args], capture_output=True, **windows_flag, encoding="utf-8", stdin=subprocess.PIPE
             )
             report = completed_process.stdout
             errors = completed_process.stderr
